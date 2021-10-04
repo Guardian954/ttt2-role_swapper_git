@@ -1,8 +1,11 @@
-function GetPlayerWeapons(ply)
-	local weapons = {}
+swapperRole = swapperRole or {}
 
-	for i = 1, #ply:GetWeapons() do
-		local weapon = ply:GetWeapons()[i]
+function swapperRole.GetPlayerWeapons(ply)
+	local processedWeapons = {}
+	local weapons = ply:GetWeapons()
+
+	for i = 1, #weapons do
+		local weapon = weapons[i]
 		local primary_ammo = nil
 		local primary_ammo_type = nil
 
@@ -19,7 +22,7 @@ function GetPlayerWeapons(ply)
 			secondary_ammo = ply:GetAmmoCount(secondary_ammo_type)
 		end
 
-		weapons[i] = {
+		processedWeapons[i] = {
 			class = WEPS.GetClass(weapon),
 			category = weapon.Category,
 			primary_ammo = primary_ammo,
@@ -28,10 +31,11 @@ function GetPlayerWeapons(ply)
 			secondary_ammo_type = secondary_ammo_type
 		}
 	end
-	return weapons
+
+	return processedWeapons
 end
 
-function StripPlayerWeaponAndAmmo(ply, weapon)
+function swapperRole.StripPlayerWeaponAndAmmo(ply, weapon)
 	ply:StripWeapon(weapon.class)
 
 	if weapon.primary_ammo then
@@ -43,7 +47,7 @@ function StripPlayerWeaponAndAmmo(ply, weapon)
 	end
 end
 
-function GivePlayerWeaponAndAmmo(ply, weapon)
+function swapperRole.GivePlayerWeaponAndAmmo(ply, weapon)
 	ply:Give(weapon.class)
 
 	if weapon.primary_ammo then
@@ -55,26 +59,8 @@ function GivePlayerWeaponAndAmmo(ply, weapon)
 	end
 end
 
-function RoleCheck(role)
-	local roleName = nil
-
-	if role == ROLE_SWAPPER then
-		roleName = "swapper"
-	end
-
-	if role == ROLE_BEGGAR then
-		roleName = "beggar"
-	end
-
-	if role == ROLE_CLOWN then
-		roleName = "clown"
-	end
-
-	return roleName -- Return the role name 
-end
-
 -- Handle the ply only taking damage from other players
-function TakeNoDamage(ply, attacker, role)
+function swapperRole.ShouldTakeNoDamage(ply, attacker, role)
 	if not IsValid(ply) or ply:GetSubRole() ~= role then return end
 
 	if not IsValid(attacker) or not attacker:IsPlayer() or attacker ~= ply then return end
@@ -85,7 +71,7 @@ function TakeNoDamage(ply, attacker, role)
 end
 
 -- Handle the attacker only damaging other players
-function DealNoDamage(ply, attacker, role)
+function swapperRole.ShouldDealNoDamage(ply, attacker, role)
 	if not IsValid(ply) or not IsValid(attacker) or not attacker:IsPlayer() or attacker:GetSubRole() ~= role then return end
 	if SpecDM and (ply.IsGhost and ply:IsGhost() or (attacker.IsGhost and attacker:IsGhost())) then return end
 
@@ -95,9 +81,9 @@ function DealNoDamage(ply, attacker, role)
 end
 
 -- Handle the attacker only damaging entities
-function EntityDamage(ply, dmginfo, role)
+function swapperRole.ShouldDealNoEntityDamage(ply, dmginfo, role)
 	local attacker = dmginfo:GetAttacker()
-	local roleName = RoleCheck(role)
+	local roleName = roles.GetByIndex(role).name
 
 	if not IsValid(attacker) or not attacker:IsPlayer() or attacker:GetSubRole() ~= role then return end
 
@@ -110,9 +96,9 @@ function EntityDamage(ply, dmginfo, role)
 end
 
 -- Handle the ply only taking environmental damage
-function TakeEnvironmentalDamage(ply, dmginfo, role)
+function swapperRole.ShouldTakeEnvironmentalDamage(ply, dmginfo, role)
 	local attacker = dmginfo:GetAttacker()
-	local roleName = RoleCheck(role)
+	local roleName = roles.GetByIndex(role).name
 
 	if not IsValid(ply) or not ply:IsPlayer() or ply:GetSubRole() ~= role then return end
 
@@ -128,35 +114,4 @@ function TakeEnvironmentalDamage(ply, dmginfo, role)
 
 	return true -- true to block damage event
 
-end
-
-local offsets = {}
-
-for i = 0, 360, 15 do
-	table.insert(offsets, Vector(math.sin(i), math.cos(i), 0))
-end
-
-function FindRespawnLocation(pos)
-	local midsize = Vector(33, 33, 74)
-	local tstart = pos + Vector(0, 0, midsize.z / 2)
-
-	for i = 1, #offsets do
-		local o = offsets[i]
-		local v = tstart + o * midsize * 1.5
-
-		local t = {
-			start = v,
-			endpos = v,
-			mins = midsize / -2,
-			maxs = midsize / 2
-		}
-
-		local tr = util.TraceHull(t)
-
-		if not tr.Hit then
-			return v - Vector(0, 0, 0.5 * midsize.z)
-		end
-	end
-
-	return false
 end
