@@ -1,5 +1,34 @@
 swapperRole = swapperRole or {}
 
+function swapperRole.GetRespawnRole(killer)
+	if GetConVar("ttt2_swapper_respawn_opposite_team"):GetBool() then
+		local rd = killer:GetSubRoleData()
+		local selectablePlys = roleselection.GetSelectablePlayers(player.GetAll())
+		local reviveRoleCandidates = table.Copy(roleselection.GetAllSelectableRolesList(#selectablePlys))
+		local reviveRoles = {}
+
+		-- make sure innocent and traitor are revive candidate roles
+		reviveRoleCandidates[ROLE_INNOCENT] = reviveRoleCandidates[ROLE_INNOCENT] or 1
+		reviveRoleCandidates[ROLE_TRAITOR] = reviveRoleCandidates[ROLE_TRAITOR] or 1
+
+		--remove jester from the revive candidate roles
+		reviveRoleCandidates[ROLE_JESTER] = nil
+
+		for k in pairs(reviveRoleCandidates) do
+			local roleData = roles.GetByIndex(k)
+			if roleData.defaultTeam ~= rd.defaultTeam then
+				reviveRoles[#reviveRoles + 1] = k
+			end
+		end
+
+		local selectedRole = reviveRoles[math.random(1, #reviveRoles)]
+
+		return selectedRole, roles.GetByIndex(selectedRole).defaultTeam
+	else
+		return killer:GetSubRole(), killer:GetTeam()
+	end
+end
+
 function swapperRole.GetPlayerWeapons(ply)
 	local processedWeapons = {}
 	local weapons = ply:GetWeapons()
