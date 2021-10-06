@@ -173,6 +173,8 @@ if SERVER then
 			-- Handle the killers swap to his new life of swapper
 			attacker:SetRole(ROLE_SWAPPER)
 
+			SendFullStateUpdate()
+
 			local health = GetConVar("ttt2_swapper_killer_health"):GetInt()
 
 			if health <= 0 then
