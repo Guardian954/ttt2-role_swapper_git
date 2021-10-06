@@ -9,6 +9,7 @@ function ROLE:PreInitialize()
 
 	self.abbr = "swa"
 	self.score.surviveBonusMultiplier = 0
+	self.score.aliveTeammatesBonusMultiplier = 0
 	self.score.survivePenaltyMultiplier = -4
 	self.score.timelimitMultiplier = -4
 	self.score.killsMultiplier = 0
