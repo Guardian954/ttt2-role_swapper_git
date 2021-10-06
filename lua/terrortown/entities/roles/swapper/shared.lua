@@ -92,123 +92,77 @@ if SERVER then
 	CreateConVar("ttt2_swapper_respawn_opposite_team", "0", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
 	CreateConVar("ttt2_swapper_respawn_delay_post_death", "0", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
 
-	local function SwapperRevive(ply, role)
-		ply:Revive(GetConVar("ttt2_swapper_respawn_delay"):GetInt(), function()
-			ply:SetHealth(GetConVar("ttt2_swapper_respawn_health"):GetInt())
-			ply:SetRole(ply.newrole, ply.newteam)
-			ply:ResetConfirmPlayer()
-
-			SendFullStateUpdate()
-		end)
-	end
-
-		-- Function to hand everyone their new weapons
-	local function SwapWeapons(victim, attacker)
-		-- Sort out the attacker first
-		-- Strip all the attackers weapons
-		for i = 1, #attacker.weapons do
-			swapperRole.StripPlayerWeaponAndAmmo(attacker, attacker.weapons[i])
-		end
-
-		-- Give the attacker all their victims gear
-		for i = 1, #victim.weapons do
-			swapperRole.GivePlayerWeaponAndAmmo(attacker, victim.weapons[i])
-		end
-		attacker:SelectWeapon("weapon_zm_improvised")
-
-		-- Next is the victim
-		-- Strip all equipment from the victim
-		for i = 1, #victim.weapons do
-			local weapon = victim.weapons[i]
-			swapperRole.StripPlayerWeaponAndAmmo(victim, weapon)
-		end
-
-		-- Give the victim all their attackers gear
-		for i = 1, #attacker.weapons do
-			local weapon = attacker.weapons[i]
-			swapperRole.GivePlayerWeaponAndAmmo(victim, weapon)
-		end
-		victim:SelectWeapon("weapon_zm_improvised")
-
-		timer.Simple(0.1, function()
-			attacker.weapons = {}
-			victim.weapons = {}
-		end)
-	end
-
 	-- Swapper doesnt deal or take any damage in relation to players
 	hook.Add("PlayerTakeDamage", "SwapperNoDamage", function(ply, inflictor, killer, amount, dmginfo)
-		if swapperRole.ShouldTakeNoDamage(ply, killer, ROLE_SWAPPER) or swapperRole.ShouldDealNoDamage(ply, killer, ROLE_SWAPPER) then
+		if roles.SWAPPER.ShouldTakeNoDamage(ply, killer, ROLE_SWAPPER)
+			or roles.SWAPPER.ShouldDealNoDamage(ply, killer, ROLE_SWAPPER)
+		then
 			dmginfo:ScaleDamage(0)
 			dmginfo:SetDamage(0)
-
-			return
 		end
 	end)
 
 	-- Check if the swapper can damage entities or be damaged by environmental effects
 	hook.Add("EntityTakeDamage", "SwapperEntityNoDamage", function(ply, dmginfo)
-		if swapperRole.ShouldDealNoEntityDamage(ply, dmginfo, ROLE_SWAPPER) or swapperRole.ShouldTakeEnvironmentalDamage(ply, dmginfo, ROLE_SWAPPER) then
+		if roles.SWAPPER.ShouldDealNoEntityDamage(ply, dmginfo, ROLE_SWAPPER)
+			or roles.SWAPPER.ShouldTakeEnvironmentalDamage(ply, dmginfo, ROLE_SWAPPER)
+		then
 			dmginfo:ScaleDamage(0)
 			dmginfo:SetDamage(0)
-
-			return
 		end
 	end)
 
 	-- Grab the weapons tables before the player loses them
 	hook.Add("DoPlayerDeath", "SwapperItemGrab", function(victim, attacker, dmginfo)
 		if victim:GetSubRole() == ROLE_SWAPPER and IsValid(attacker) and attacker:IsPlayer() then
-			victim.weapons = swapperRole.GetPlayerWeapons(victim)
-			attacker.weapons = swapperRole.GetPlayerWeapons(attacker)
+			victim.weapons = roles.SWAPPER.GetPlayerWeapons(victim)
+			attacker.weapons = roles.SWAPPER.GetPlayerWeapons(attacker)
 		end
 	end)
 
 	hook.Add("PlayerDeath", "SwapperDeath", function(victim, infl, attacker)
-		if victim:GetSubRole() == ROLE_SWAPPER and IsValid(attacker) and attacker:IsPlayer() then
-			if victim == attacker then return end -- Suicide so do nothing
+		if victim:GetSubRole() ~= ROLE_SWAPPER or not IsValid(attacker)
+			or not attacker:IsPlayer() or victim == attacker
+		then return end
 
-			victim.newrole, victim.newteam = swapperRole.GetRespawnRole(attacker)
+		local role, team = roles.SWAPPER.GetRespawnRole(attacker)
 
-			-- Handle the killers swap to his new life of swapper
-			attacker:SetRole(ROLE_SWAPPER)
+		-- Handle the killers swap to his new life of swapper
+		attacker:SetRole(ROLE_SWAPPER)
+		SendFullStateUpdate()
 
-			SendFullStateUpdate()
+		local health = GetConVar("ttt2_swapper_killer_health"):GetInt()
 
-			local health = GetConVar("ttt2_swapper_killer_health"):GetInt()
-
-			if health <= 0 then
-				attacker:Kill()
-			else
-				attacker:SetHealth(health)
-			end
-
-			attacker:PrintMessage(HUD_PRINTCENTER, "You killed the Swapper!")
-
-			-- Handle the swappers new life as a new role
-			if GetConVar("ttt2_swapper_respawn_delay_post_death"):GetBool() and health > 0 then
-				hook.Add("PostPlayerDeath", "SwapperWaitForKillerDeath_" .. victim:SteamID64(), function(deadply)
-					if not IsValid(attacker) or not IsValid(victim) then return end
-
-					if deadply ~= attacker then return end
-
-					SwapperRevive(victim)
-
-					hook.Remove("PostPlayerDeath", "SwapperWaitForKillerDeath_" .. victim:SteamID64())
-				end)
-			else
-				SwapperRevive(victim)
-			end
-
-			-- start the jester confetti
-			net.Start("NewConfetti")
-			net.WriteEntity(ply)
-			net.Broadcast()
-
-			timer.Simple(0, function()
-				SwapWeapons(victim, attacker)
-			end)
+		if health <= 0 then
+			attacker:Kill()
+		else
+			attacker:SetHealth(health)
 		end
+
+		attacker:PrintMessage(HUD_PRINTCENTER, "You killed the Swapper!")
+
+		-- Handle the swappers new life as a new role
+		if GetConVar("ttt2_swapper_respawn_delay_post_death"):GetBool() and health > 0 then
+			hook.Add("PostPlayerDeath", "SwapperWaitForKillerDeath_" .. victim:SteamID64(), function(deadply)
+				if not IsValid(attacker) or not IsValid(victim) then return end
+
+				if deadply ~= attacker then return end
+
+				roles.SWAPPER.Revive(victim, role, team)
+
+				hook.Remove("PostPlayerDeath", "SwapperWaitForKillerDeath_" .. victim:SteamID64())
+			end)
+		else
+			roles.SWAPPER.Revive(victim, role, team)
+		end
+
+		roles.JESTER.SpawnJesterConfetti(ply)
+
+		timer.Simple(0, function()
+			if not IsValid(victim) or not IsValid(attacker) then return end
+
+			roles.SWAPPER.SwapWeapons(victim, attacker)
+		end)
 	end)
 
 	-- hide the swapper as a normal jester
