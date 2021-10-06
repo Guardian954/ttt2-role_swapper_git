@@ -8,8 +8,9 @@ function ROLE:PreInitialize()
 	self.color = Color(214, 47, 125, 255)
 
 	self.abbr = "swa"
-	self.score.surviveBonusMultiplier = -2
-	self.score.timelimitMultiplier = -2
+	self.score.surviveBonusMultiplier = 0
+	self.score.survivePenaltyMultiplier = -4
+	self.score.timelimitMultiplier = -4
 	self.score.killsMultiplier = 0
 	self.score.teamKillsMultiplier = -16
 	self.score.bodyFoundMuliplier = 0
