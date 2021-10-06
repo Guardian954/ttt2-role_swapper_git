@@ -5,24 +5,24 @@ if SERVER then
 end
 
 function ROLE:PreInitialize()
-	self.color = Color(245, 48, 155, 255)
+	self.color = Color(214, 47, 125, 255)
 
-	self.abbr = "swa" -- abbreviation
-	self.radarColor = Color(245, 48, 155) -- color if someone is using the radar
-	self.surviveBonus = 0 -- bonus multiplier for every survive while another player was killed
-	self.scoreKillsMultiplier = 1 -- multiplier for kill of player of another team
-	self.scoreTeamKillsMultiplier = -8 -- multiplier for teamkill
-	self.preventWin = true -- set true if role can't win (maybe because of own / special win conditions)
-	self.defaultTeam = TEAM_JESTER -- the team name: roles with same team name are working together
-	self.defaultEquipment = SPECIAL_EQUIPMENT -- here you can set up your own default equipment
+	self.abbr = "swa"
+	self.score.surviveBonusMultiplier = -2
+	self.score.timelimitMultiplier = -2
+	self.score.killsMultiplier = 0
+	self.score.teamKillsMultiplier = -16
+	self.score.bodyFoundMuliplier = 0
+	self.preventWin = true
+
+	self.defaultTeam = TEAM_JESTER
+	self.defaultEquipment = SPECIAL_EQUIPMENT
 
 	self.conVarData = {
-		pct = 0.15, -- necessary: percentage of getting this role selected (per player)
-		maximum = 1, -- maximum amount of roles in a round
-		minPlayers = 5, -- minimum amount of players until this role is able to get selected
-		credits = 1, -- the starting credits of a specific role
-		togglable = true, -- option to toggle a role for a client if possible (F1 menu)
-		shopFallback = SHOP_DISABLED,
+		pct = 0.2,
+		maximum = 1,
+		minPlayers = 5,
+		togglable = true
 	}
 end
 
@@ -134,43 +134,6 @@ if SERVER then
 		end)
 	end
 
-	hook.Add("TTT2JesterModifyList", "AddSwapperToJesterList", function(jesterTable)
-		local players = player.GetAll()
-
-		for i = 1, #players do
-			local ply = players[i]
-
-			if ply:GetSubRole() ~= ROLE_SWAPPER then continue end
-
-			jesterTable[#jesterTable + 1] = ply
-		end
-	end)
-
-	-- Hide the swapper as a normal jester to the traitors
-	hook.Add("TTT2SpecialRoleSyncing", "TTT2RoleSwapper", function(ply, tbl)
-		if ply and not ply:HasTeam(TEAM_TRAITOR) or ply:GetSubRoleData().unknownTeam or GetRoundState() == ROUND_POST then return end
-
-		for swapper in pairs(tbl) do
-			if not swapper:IsTerror() or swapper == ply then continue end
-
-			if ply:GetSubRole() ~= ROLE_SWAPPER and swapper:GetSubRole() == ROLE_SWAPPER then
-				if not swapper:Alive() then continue end
-
-				if ply:GetTeam() ~= TEAM_JESTER then
-					tbl[swapper] = {ROLE_JESTER, TEAM_JESTER}
-				else
-					tbl[swapper] = {ROLE_SWAPPER, TEAM_JESTER}
-				end
-			end
-		end
-	end)
-
-	hook.Add("TTT2ModifyRadarRole", "TTT2ModifyRadarRoleSwapper", function(ply, target)
-		if ply:HasTeam(TEAM_TRAITOR) and target:GetSubRole() == ROLE_SWAPPER then
-			return ROLE_JESTER, TEAM_JESTER
-		end
-	end)
-
 	-- Swapper doesnt deal or take any damage in relation to players
 	hook.Add("PlayerTakeDamage", "SwapperNoDamage", function(ply, inflictor, killer, amount, dmginfo)
 		if swapperRole.ShouldTakeNoDamage(ply, killer, ROLE_SWAPPER) or swapperRole.ShouldDealNoDamage(ply, killer, ROLE_SWAPPER) then
@@ -242,6 +205,13 @@ if SERVER then
 				SwapWeapons(victim, attacker)
 			end)
 		end
+	end)
+
+	-- hide the swapper as a normal jester
+	hook.Add("TTT2JesterModifySyncedRole", "SwapperHideAsJester", function(_, syncPly)
+		if syncPly:GetSubRole() ~= ROLE_SWAPPER then return end
+
+		return {ROLE_JESTER, TEAM_JESTER}
 	end)
 
 	-- reset hooks at round end
