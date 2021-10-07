@@ -11,5 +11,5 @@ L["ttt2_desc_" .. roles.SWAPPER.name] = [[The swapper is a Jester role that will
 -- OTHER ROLE LANGUAGE STRINGS
 L["ttt2_role_swapper_inform_opposite"] = "You'll respawn as a random opposite role of your killer this round!"
 L["ttt2_role_swapper_inform_same"] = "You'll respawn as the same role as your killer this round!"
-L["ttt2_role_swapper_inform_wait"] = "You'll only respawn once your killer dies this round!"
+L["ttt2_role_swapper_inform_wait"] = "You wont respawn until your killer dies this round!"
 L["ttt2_role_swapper_inform_instant"] = "You'll respawn after {delay} seconds once killed this round!"
