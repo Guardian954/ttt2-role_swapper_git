@@ -1,6 +1,7 @@
-function roles.SWAPPER.GetRespawnRole(killer, opposite)
-	if opposite then
-		local rd = killer:GetSubRoleData()
+function roles.SWAPPER.GetRespawnRole(victim, killer)
+	if roles.SWAPPER.oppositeTeam then
+		local rdVictim = victim:GetSubRoleData()
+		local rdKiller = killer:GetSubRoleData()
 		local selectablePlys = roleselection.GetSelectablePlayers(player.GetAll())
 		local reviveRoleCandidates = table.Copy(roleselection.GetAllSelectableRolesList(#selectablePlys))
 		local reviveRoles = {}
@@ -10,15 +11,16 @@ function roles.SWAPPER.GetRespawnRole(killer, opposite)
 		reviveRoleCandidates[ROLE_TRAITOR] = reviveRoleCandidates[ROLE_TRAITOR] or 1
 
 		--remove jester like roles from the revive candidate roles
-		reviveRoleCandidates[ROLE_JESTER] = nil
-		reviveRoleCandidates[ROLE_BEGGAR] = nil
-		reviveRoleCandidates[ROLE_CLOWN] = nil
+		hook.Run("TTT2SwapperModifyRevivalList", reviveRoleCandidates)
 
 		for k in pairs(reviveRoleCandidates) do
-			local roleData = roles.GetByIndex(k)
-			if roleData.defaultTeam ~= rd.defaultTeam then
-				reviveRoles[#reviveRoles + 1] = k
-			end
+			local rdReviveCandidate = roles.GetByIndex(k)
+
+			if rdReviveCandidate.defaultTeam == rdVictim.defaultTeam
+				or rdReviveCandidate.defaultTeam == rdKiller.defaultTeam
+			then continue end
+
+			reviveRoles[#reviveRoles + 1] = k
 		end
 
 		local selectedRole = reviveRoles[math.random(1, #reviveRoles)]
@@ -188,4 +190,28 @@ function roles.SWAPPER.Revive(ply, role, team)
 
 		SendFullStateUpdate()
 	end)
+end
+
+function roles.SWAPPER.HandleReviveConvars()
+	-- first set up the variables
+	if GetConVar("ttt2_swapper_randomise_rounds"):GetBool() then
+		roles.SWAPPER.oppositeTeam = tobool(math.random(0,1))
+		roles.SWAPPER.waitForDeath = tobool(math.random(0,1))
+	else
+		roles.SWAPPER.oppositeTeam = GetConVar("ttt2_swapper_respawn_opposite_team"):GetBool()
+		roles.SWAPPER.waitForDeath = GetConVar("ttt2_swapper_respawn_delay_post_death"):GetBool()
+	end
+
+	-- then send the messages
+	if roles.SWAPPER.oppositeTeam then
+		LANG.Msg(ROLE_SWAPPER, "ttt2_role_swapper_inform_opposite", nil, MSG_MSTACK_ROLE)
+	else
+		LANG.Msg(ROLE_SWAPPER, "ttt2_role_swapper_inform_same", nil, MSG_MSTACK_ROLE)
+	end
+
+	if roles.SWAPPER.waitForDeath then
+		LANG.Msg(ROLE_SWAPPER, "ttt2_role_swapper_inform_wait", nil, MSG_MSTACK_ROLE)
+	else
+		LANG.Msg(ROLE_SWAPPER, "ttt2_role_swapper_inform_instant", {delay = GetConVar("ttt2_swapper_respawn_delay"):GetInt()}, MSG_MSTACK_ROLE)
+	end
 end

@@ -82,7 +82,7 @@ hook.Add("TTTUlxDynamicRCVars", "TTTUlxDynamicSwaCVars", function(tbl)
 		checkbox = true,
 		desc = "Should the respawn be delayed until the killer's death? (Def. 0)"
 	})
-	
+
 	table.insert(tbl[ROLE_SWAPPER], {
 		cvar = "ttt2_swapper_randomise_rounds",
 		checkbox = true,
@@ -91,48 +91,30 @@ hook.Add("TTTUlxDynamicRCVars", "TTTUlxDynamicSwaCVars", function(tbl)
 end)
 
 if SERVER then
-	local cv = {}
 	CreateConVar("ttt2_swapper_entity_damage", "1", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
 	CreateConVar("ttt2_swapper_environmental_damage", "1", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
-	cv.killer_health = CreateConVar("ttt2_swapper_killer_health", "1", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
-	cv.swapper_health = CreateConVar("ttt2_swapper_respawn_health", "100", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
-	cv.delay = CreateConVar("ttt2_swapper_respawn_delay", "0", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
-	cv.opposite = CreateConVar("ttt2_swapper_respawn_opposite_team", "0", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
-	cv.wait = CreateConVar("ttt2_swapper_respawn_delay_post_death", "0", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
-	cv.randomise = CreateConVar("ttt2_swapper_randomise_rounds", "0", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
-	local opposite = cv.opposite:GetBool()
-	local wait = cv.wait:GetBool()
+	CreateConVar("ttt2_swapper_respawn_health", "100", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
+	CreateConVar("ttt2_swapper_respawn_delay", "0", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
+	CreateConVar("ttt2_swapper_respawn_opposite_team", "0", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
+	CreateConVar("ttt2_swapper_respawn_delay_post_death", "0", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
+	CreateConVar("ttt2_swapper_randomise_rounds", "0", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
+
+	local cvKillerHealth = CreateConVar("ttt2_swapper_killer_health", "1", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
+
+	cvars.AddChangeCallback("ttt2_swapper_respawn_opposite_team", function(_, old, new)
+		roles.SWAPPER.HandleReviveConvars()
+	end)
+
+	cvars.AddChangeCallback("ttt2_swapper_respawn_delay_post_death", function(_, old, new)
+		roles.SWAPPER.HandleReviveConvars()
+	end)
+
+	cvars.AddChangeCallback("ttt2_swapper_randomise_rounds", function(_, old, new)
+		roles.SWAPPER.HandleReviveConvars()
+	end)
 
 	hook.Add("TTTBeginRound", "SwapperRandomCvarCheck", function()
-		local players = player.GetAll()
-		local swapper_players = {}
-
-		if cv.randomise:GetBool() then
-			opposite = tobool(math.random(0,1))
-			wait = tobool(math.random(0,1))
-		else
-			opposite = cv.opposite:GetBool()
-			wait = cv.wait:GetBool()
-		end
-		for i = 1, #players do
-			local ply = players[i]
-	
-			if ply:GetSubRole() == ROLE_SWAPPER then
-				swapper_players[#swapper_players + 1] = ply
-			end
-		end
-	
-		if opposite then
-			LANG.Msg(swapper_players, "ttt2_role_swapper_inform_opposite", nil, MSG_MSTACK_ROLE)
-		else
-			LANG.Msg(swapper_players, "ttt2_role_swapper_inform_same", nil, MSG_MSTACK_ROLE)
-		end
-	
-		if wait then
-			LANG.Msg(swapper_players, "ttt2_role_swapper_inform_wait", nil, MSG_MSTACK_ROLE)
-		else
-			LANG.Msg(swapper_players, "ttt2_role_swapper_inform_instant", {delay = cv.delay:GetInt()}, MSG_MSTACK_ROLE)
-		end
+		roles.SWAPPER.HandleReviveConvars()
 	end)
 
 	-- Swapper doesnt deal or take any damage in relation to players
@@ -167,14 +149,14 @@ if SERVER then
 		if victim:GetSubRole() ~= ROLE_SWAPPER or not IsValid(attacker)
 			or not attacker:IsPlayer() or victim == attacker
 		then return end
-		
-		local role, team = roles.SWAPPER.GetRespawnRole(attacker, opposite)
+
+		local role, team = roles.SWAPPER.GetRespawnRole(victim, attacker)
 
 		-- Handle the killers swap to his new life of swapper
 		attacker:SetRole(ROLE_SWAPPER)
 		SendFullStateUpdate()
 
-		local health = cv.killer_health:GetInt()
+		local health = cvKillerHealth:GetInt()
 
 		if health <= 0 then
 			attacker:Kill()
@@ -185,7 +167,7 @@ if SERVER then
 		attacker:PrintMessage(HUD_PRINTCENTER, "You killed the Swapper!")
 
 		-- Handle the swappers new life as a new role
-		if wait and health > 0 then
+		if roles.SWAPPER.waitForDeath and health > 0 then
 			hook.Add("PostPlayerDeath", "SwapperWaitForKillerDeath_" .. victim:SteamID64(), function(deadply)
 				if not IsValid(attacker) or not IsValid(victim) then return end
 
