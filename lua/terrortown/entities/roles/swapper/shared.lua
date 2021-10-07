@@ -31,6 +31,19 @@ end
 hook.Add("TTTUlxDynamicRCVars", "TTTUlxDynamicSwaCVars", function(tbl)
 	tbl[ROLE_SWAPPER] = tbl[ROLE_SWAPPER] or {}
 
+
+	table.insert(tbl[ROLE_SWAPPER], {
+		cvar = "ttt2_swapper_entity_damage",
+		checkbox = true,
+		desc = "Can the swapper damage entities? (Def. 1)"
+	})
+
+	table.insert(tbl[ROLE_SWAPPER], {
+		cvar = "ttt2_swapper_environmental_damage",
+		checkbox = true,
+		desc = "Can explode, burn, crush, fall, drown? (Def. 1)"
+	})
+
 	table.insert(tbl[ROLE_SWAPPER], {
 		cvar = "ttt2_swapper_killer_health",
 		slider = true,
@@ -46,19 +59,7 @@ hook.Add("TTTUlxDynamicRCVars", "TTTUlxDynamicSwaCVars", function(tbl)
 		min = 0,
 		max = 100,
 		decimal = 0,
-		desc = "Health swapper returns resurrects with (Def. 100)"
-	})
-
-	table.insert(tbl[ROLE_SWAPPER], {
-		cvar = "ttt2_swapper_entity_damage",
-		checkbox = true,
-		desc = "Can the swapper damage entities? (Def. 1)"
-	})
-
-	table.insert(tbl[ROLE_SWAPPER], {
-		cvar = "ttt2_swapper_environmental_damage",
-		checkbox = true,
-		desc = "Can explode, burn, crush, fall, drown? (Def. 1)"
+		desc = "Health swapper resurrects into role with (Def. 100)"
 	})
 
 	table.insert(tbl[ROLE_SWAPPER], {
@@ -81,16 +82,58 @@ hook.Add("TTTUlxDynamicRCVars", "TTTUlxDynamicSwaCVars", function(tbl)
 		checkbox = true,
 		desc = "Should the respawn be delayed until the killer's death? (Def. 0)"
 	})
+	
+	table.insert(tbl[ROLE_SWAPPER], {
+		cvar = "ttt2_swapper_randomise_rounds",
+		checkbox = true,
+		desc = "Should the above 2 cvars be randomised every round? (Def. 0)"
+	})
 end)
 
 if SERVER then
-	CreateConVar("ttt2_swapper_killer_health", "1", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
-	CreateConVar("ttt2_swapper_respawn_health", "100", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
+	local cv = {}
 	CreateConVar("ttt2_swapper_entity_damage", "1", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
 	CreateConVar("ttt2_swapper_environmental_damage", "1", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
-	CreateConVar("ttt2_swapper_respawn_delay", "0", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
-	CreateConVar("ttt2_swapper_respawn_opposite_team", "0", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
-	CreateConVar("ttt2_swapper_respawn_delay_post_death", "0", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
+	cv.killer_health = CreateConVar("ttt2_swapper_killer_health", "1", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
+	cv.swapper_health = CreateConVar("ttt2_swapper_respawn_health", "100", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
+	cv.delay = CreateConVar("ttt2_swapper_respawn_delay", "0", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
+	cv.opposite = CreateConVar("ttt2_swapper_respawn_opposite_team", "0", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
+	cv.wait = CreateConVar("ttt2_swapper_respawn_delay_post_death", "0", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
+	cv.randomise = CreateConVar("ttt2_swapper_randomise_rounds", "0", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
+	local opposite = cv.opposite:GetBool()
+	local wait = cv.wait:GetBool()
+
+	hook.Add("TTTBeginRound", "SwapperRandomCvarCheck", function()
+		local players = player.GetAll()
+		local swapper_players = {}
+
+		if cv.randomise:GetBool() then
+			opposite = tobool(math.random(0,1))
+			wait = tobool(math.random(0,1))
+		else
+			opposite = cv.opposite:GetBool()
+			wait = cv.wait:GetBool()
+		end
+		for i = 1, #players do
+			local ply = players[i]
+	
+			if ply:GetSubRole() == ROLE_SWAPPER then
+				swapper_players[#swapper_players + 1] = ply
+			end
+		end
+	
+		if opposite then
+			LANG.Msg(swapper_players, "ttt2_role_swapper_inform_opposite", nil, MSG_MSTACK_ROLE)
+		else
+			LANG.Msg(swapper_players, "ttt2_role_swapper_inform_same", nil, MSG_MSTACK_ROLE)
+		end
+	
+		if wait then
+			LANG.Msg(swapper_players, "ttt2_role_swapper_inform_wait", nil, MSG_MSTACK_ROLE)
+		else
+			LANG.Msg(swapper_players, "ttt2_role_swapper_inform_instant", {delay = cv.delay:GetInt()}, MSG_MSTACK_ROLE)
+		end
+	end)
 
 	-- Swapper doesnt deal or take any damage in relation to players
 	hook.Add("PlayerTakeDamage", "SwapperNoDamage", function(ply, inflictor, killer, amount, dmginfo)
@@ -124,14 +167,14 @@ if SERVER then
 		if victim:GetSubRole() ~= ROLE_SWAPPER or not IsValid(attacker)
 			or not attacker:IsPlayer() or victim == attacker
 		then return end
-
-		local role, team = roles.SWAPPER.GetRespawnRole(attacker)
+		
+		local role, team = roles.SWAPPER.GetRespawnRole(attacker, opposite)
 
 		-- Handle the killers swap to his new life of swapper
 		attacker:SetRole(ROLE_SWAPPER)
 		SendFullStateUpdate()
 
-		local health = GetConVar("ttt2_swapper_killer_health"):GetInt()
+		local health = cv.killer_health:GetInt()
 
 		if health <= 0 then
 			attacker:Kill()
@@ -142,7 +185,7 @@ if SERVER then
 		attacker:PrintMessage(HUD_PRINTCENTER, "You killed the Swapper!")
 
 		-- Handle the swappers new life as a new role
-		if GetConVar("ttt2_swapper_respawn_delay_post_death"):GetBool() and health > 0 then
+		if wait and health > 0 then
 			hook.Add("PostPlayerDeath", "SwapperWaitForKillerDeath_" .. victim:SteamID64(), function(deadply)
 				if not IsValid(attacker) or not IsValid(victim) then return end
 
@@ -156,7 +199,7 @@ if SERVER then
 			roles.SWAPPER.Revive(victim, role, team)
 		end
 
-		roles.JESTER.SpawnJesterConfetti(ply)
+		roles.JESTER.SpawnJesterConfetti(victim)
 
 		timer.Simple(0, function()
 			if not IsValid(victim) or not IsValid(attacker) then return end
