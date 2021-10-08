@@ -1,8 +1,7 @@
-swapperRole = swapperRole or {}
-
-function swapperRole.GetRespawnRole(killer)
-	if GetConVar("ttt2_swapper_respawn_opposite_team"):GetBool() then
-		local rd = killer:GetSubRoleData()
+function roles.SWAPPER.GetRespawnRole(victim, killer)
+	if roles.SWAPPER.oppositeTeam then
+		local rdVictim = victim:GetSubRoleData()
+		local rdKiller = killer:GetSubRoleData()
 		local selectablePlys = roleselection.GetSelectablePlayers(player.GetAll())
 		local reviveRoleCandidates = table.Copy(roleselection.GetAllSelectableRolesList(#selectablePlys))
 		local reviveRoles = {}
@@ -11,14 +10,17 @@ function swapperRole.GetRespawnRole(killer)
 		reviveRoleCandidates[ROLE_INNOCENT] = reviveRoleCandidates[ROLE_INNOCENT] or 1
 		reviveRoleCandidates[ROLE_TRAITOR] = reviveRoleCandidates[ROLE_TRAITOR] or 1
 
-		--remove jester from the revive candidate roles
-		reviveRoleCandidates[ROLE_JESTER] = nil
+		--remove jester like roles from the revive candidate roles
+		hook.Run("TTT2SwapperModifyRevivalList", reviveRoleCandidates)
 
 		for k in pairs(reviveRoleCandidates) do
-			local roleData = roles.GetByIndex(k)
-			if roleData.defaultTeam ~= rd.defaultTeam then
-				reviveRoles[#reviveRoles + 1] = k
-			end
+			local rdReviveCandidate = roles.GetByIndex(k)
+
+			if rdReviveCandidate.defaultTeam == rdVictim.defaultTeam
+				or rdReviveCandidate.defaultTeam == rdKiller.defaultTeam
+			then continue end
+
+			reviveRoles[#reviveRoles + 1] = k
 		end
 
 		local selectedRole = reviveRoles[math.random(1, #reviveRoles)]
@@ -29,7 +31,7 @@ function swapperRole.GetRespawnRole(killer)
 	end
 end
 
-function swapperRole.GetPlayerWeapons(ply)
+function roles.SWAPPER.GetPlayerWeapons(ply)
 	local processedWeapons = {}
 	local weapons = ply:GetWeapons()
 
@@ -64,7 +66,7 @@ function swapperRole.GetPlayerWeapons(ply)
 	return processedWeapons
 end
 
-function swapperRole.StripPlayerWeaponAndAmmo(ply, weapon)
+function roles.SWAPPER.StripPlayerWeaponAndAmmo(ply, weapon)
 	ply:StripWeapon(weapon.class)
 
 	if weapon.primary_ammo then
@@ -76,7 +78,7 @@ function swapperRole.StripPlayerWeaponAndAmmo(ply, weapon)
 	end
 end
 
-function swapperRole.GivePlayerWeaponAndAmmo(ply, weapon)
+function roles.SWAPPER.GivePlayerWeaponAndAmmo(ply, weapon)
 	ply:Give(weapon.class)
 
 	if weapon.primary_ammo then
@@ -89,7 +91,7 @@ function swapperRole.GivePlayerWeaponAndAmmo(ply, weapon)
 end
 
 -- Handle the ply only taking damage from other players
-function swapperRole.ShouldTakeNoDamage(ply, attacker, role)
+function roles.SWAPPER.ShouldTakeNoDamage(ply, attacker, role)
 	if not IsValid(ply) or ply:GetSubRole() ~= role then return end
 
 	if not IsValid(attacker) or not attacker:IsPlayer() or attacker ~= ply then return end
@@ -100,7 +102,7 @@ function swapperRole.ShouldTakeNoDamage(ply, attacker, role)
 end
 
 -- Handle the attacker only damaging other players
-function swapperRole.ShouldDealNoDamage(ply, attacker, role)
+function roles.SWAPPER.ShouldDealNoDamage(ply, attacker, role)
 	if not IsValid(ply) or not IsValid(attacker) or not attacker:IsPlayer() or attacker:GetSubRole() ~= role then return end
 	if SpecDM and (ply.IsGhost and ply:IsGhost() or (attacker.IsGhost and attacker:IsGhost())) then return end
 
@@ -110,7 +112,7 @@ function swapperRole.ShouldDealNoDamage(ply, attacker, role)
 end
 
 -- Handle the attacker only damaging entities
-function swapperRole.ShouldDealNoEntityDamage(ply, dmginfo, role)
+function roles.SWAPPER.ShouldDealNoEntityDamage(ply, dmginfo, role)
 	local attacker = dmginfo:GetAttacker()
 	local roleName = roles.GetByIndex(role).name
 
@@ -125,7 +127,7 @@ function swapperRole.ShouldDealNoEntityDamage(ply, dmginfo, role)
 end
 
 -- Handle the ply only taking environmental damage
-function swapperRole.ShouldTakeEnvironmentalDamage(ply, dmginfo, role)
+function roles.SWAPPER.ShouldTakeEnvironmentalDamage(ply, dmginfo, role)
 	local attacker = dmginfo:GetAttacker()
 	local roleName = roles.GetByIndex(role).name
 
@@ -142,5 +144,74 @@ function swapperRole.ShouldTakeEnvironmentalDamage(ply, dmginfo, role)
 	print("Blocking " .. roleName .. " taking environmental damage")
 
 	return true -- true to block damage event
+end
 
+-- Function to hand everyone their new weapons
+function roles.SWAPPER.SwapWeapons(victim, attacker)
+	-- Sort out the attacker first
+	-- Strip all the attackers weapons
+	for i = 1, #attacker.weapons do
+		roles.SWAPPER.StripPlayerWeaponAndAmmo(attacker, attacker.weapons[i])
+	end
+
+	-- Give the attacker all their victims gear
+	for i = 1, #victim.weapons do
+		roles.SWAPPER.GivePlayerWeaponAndAmmo(attacker, victim.weapons[i])
+	end
+	attacker:SelectWeapon("weapon_zm_improvised")
+
+	-- Next is the victim
+	-- Strip all equipment from the victim
+	for i = 1, #victim.weapons do
+		local weapon = victim.weapons[i]
+
+		roles.SWAPPER.StripPlayerWeaponAndAmmo(victim, weapon)
+	end
+
+	-- Give the victim all their attackers gear
+	for i = 1, #attacker.weapons do
+		local weapon = attacker.weapons[i]
+
+		roles.SWAPPER.GivePlayerWeaponAndAmmo(victim, weapon)
+	end
+	victim:SelectWeapon("weapon_zm_improvised")
+
+	timer.Simple(0, function()
+		attacker.weapons = {}
+		victim.weapons = {}
+	end)
+end
+
+function roles.SWAPPER.Revive(ply, role, team)
+	ply:Revive(GetConVar("ttt2_swapper_respawn_delay"):GetInt(), function()
+		ply:SetHealth(GetConVar("ttt2_swapper_respawn_health"):GetInt())
+		ply:SetRole(role, team)
+		ply:ResetConfirmPlayer()
+
+		SendFullStateUpdate()
+	end)
+end
+
+function roles.SWAPPER.HandleReviveConvars()
+	-- first set up the variables
+	if GetConVar("ttt2_swapper_randomise_rounds"):GetBool() then
+		roles.SWAPPER.oppositeTeam = tobool(math.random(0,1))
+		roles.SWAPPER.waitForDeath = tobool(math.random(0,1))
+	else
+		roles.SWAPPER.oppositeTeam = GetConVar("ttt2_swapper_respawn_opposite_team"):GetBool()
+		roles.SWAPPER.waitForDeath = GetConVar("ttt2_swapper_respawn_delay_post_death"):GetBool()
+	end
+
+	-- then send the messages
+	if roles.SWAPPER.oppositeTeam then
+		LANG.Msg(ROLE_SWAPPER, "ttt2_role_swapper_inform_opposite", nil, MSG_MSTACK_ROLE)
+	else
+		LANG.Msg(ROLE_SWAPPER, "ttt2_role_swapper_inform_same", nil, MSG_MSTACK_ROLE)
+	end
+
+	if roles.SWAPPER.waitForDeath then
+		LANG.Msg(ROLE_SWAPPER, "ttt2_role_swapper_inform_wait", nil, MSG_MSTACK_ROLE)
+	else
+		LANG.Msg(ROLE_SWAPPER, "ttt2_role_swapper_inform_instant", {delay = GetConVar("ttt2_swapper_respawn_delay"):GetInt()}, MSG_MSTACK_ROLE)
+	end
 end

@@ -5,29 +5,44 @@ if SERVER then
 end
 
 function ROLE:PreInitialize()
-	self.color = Color(245, 48, 155, 255)
+	self.color = Color(214, 47, 125, 255)
 
-	self.abbr = "swa" -- abbreviation
-	self.radarColor = Color(245, 48, 155) -- color if someone is using the radar
-	self.surviveBonus = 0 -- bonus multiplier for every survive while another player was killed
-	self.scoreKillsMultiplier = 1 -- multiplier for kill of player of another team
-	self.scoreTeamKillsMultiplier = -8 -- multiplier for teamkill
-	self.preventWin = true -- set true if role can't win (maybe because of own / special win conditions)
-	self.defaultTeam = TEAM_JESTER -- the team name: roles with same team name are working together
-	self.defaultEquipment = SPECIAL_EQUIPMENT -- here you can set up your own default equipment
+	self.abbr = "swa"
+	self.score.surviveBonusMultiplier = 0
+	self.score.aliveTeammatesBonusMultiplier = 0
+	self.score.survivePenaltyMultiplier = -4
+	self.score.timelimitMultiplier = -4
+	self.score.killsMultiplier = 0
+	self.score.teamKillsMultiplier = -16
+	self.score.bodyFoundMuliplier = 0
+	self.preventWin = true
+
+	self.defaultTeam = TEAM_JESTER
+	self.defaultEquipment = SPECIAL_EQUIPMENT
 
 	self.conVarData = {
-		pct = 0.15, -- necessary: percentage of getting this role selected (per player)
-		maximum = 1, -- maximum amount of roles in a round
-		minPlayers = 5, -- minimum amount of players until this role is able to get selected
-		credits = 1, -- the starting credits of a specific role
-		togglable = true, -- option to toggle a role for a client if possible (F1 menu)
-		shopFallback = SHOP_DISABLED,
+		pct = 0.2,
+		maximum = 1,
+		minPlayers = 5,
+		togglable = true
 	}
 end
 
 hook.Add("TTTUlxDynamicRCVars", "TTTUlxDynamicSwaCVars", function(tbl)
 	tbl[ROLE_SWAPPER] = tbl[ROLE_SWAPPER] or {}
+
+
+	table.insert(tbl[ROLE_SWAPPER], {
+		cvar = "ttt2_swapper_entity_damage",
+		checkbox = true,
+		desc = "Can the swapper damage entities? (Def. 1)"
+	})
+
+	table.insert(tbl[ROLE_SWAPPER], {
+		cvar = "ttt2_swapper_environmental_damage",
+		checkbox = true,
+		desc = "Can explode, burn, crush, fall, drown? (Def. 1)"
+	})
 
 	table.insert(tbl[ROLE_SWAPPER], {
 		cvar = "ttt2_swapper_killer_health",
@@ -44,19 +59,7 @@ hook.Add("TTTUlxDynamicRCVars", "TTTUlxDynamicSwaCVars", function(tbl)
 		min = 0,
 		max = 100,
 		decimal = 0,
-		desc = "Health swapper returns resurrects with (Def. 100)"
-	})
-
-	table.insert(tbl[ROLE_SWAPPER], {
-		cvar = "ttt2_swapper_entity_damage",
-		checkbox = true,
-		desc = "Can the swapper damage entities? (Def. 1)"
-	})
-
-	table.insert(tbl[ROLE_SWAPPER], {
-		cvar = "ttt2_swapper_environmental_damage",
-		checkbox = true,
-		desc = "Can explode, burn, crush, fall, drown? (Def. 1)"
+		desc = "Health swapper resurrects into role with (Def. 100)"
 	})
 
 	table.insert(tbl[ROLE_SWAPPER], {
@@ -79,169 +82,119 @@ hook.Add("TTTUlxDynamicRCVars", "TTTUlxDynamicSwaCVars", function(tbl)
 		checkbox = true,
 		desc = "Should the respawn be delayed until the killer's death? (Def. 0)"
 	})
+
+	table.insert(tbl[ROLE_SWAPPER], {
+		cvar = "ttt2_swapper_randomise_rounds",
+		checkbox = true,
+		desc = "Should the above 2 cvars be randomised every round? (Def. 0)"
+	})
 end)
 
 if SERVER then
-	CreateConVar("ttt2_swapper_killer_health", "1", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
-	CreateConVar("ttt2_swapper_respawn_health", "100", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
 	CreateConVar("ttt2_swapper_entity_damage", "1", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
 	CreateConVar("ttt2_swapper_environmental_damage", "1", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
+	CreateConVar("ttt2_swapper_respawn_health", "100", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
 	CreateConVar("ttt2_swapper_respawn_delay", "0", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
 	CreateConVar("ttt2_swapper_respawn_opposite_team", "0", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
 	CreateConVar("ttt2_swapper_respawn_delay_post_death", "0", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
+	CreateConVar("ttt2_swapper_randomise_rounds", "0", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
 
-	local function SwapperRevive(ply, role)
-		ply:Revive(GetConVar("ttt2_swapper_respawn_delay"):GetInt(), function()
-			ply:SetHealth(GetConVar("ttt2_swapper_respawn_health"):GetInt())
-			ply:SetRole(ply.newrole, ply.newteam)
-			ply:ResetConfirmPlayer()
+	local cvKillerHealth = CreateConVar("ttt2_swapper_killer_health", "1", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
 
-			SendFullStateUpdate()
-		end)
-	end
-
-		-- Function to hand everyone their new weapons
-	local function SwapWeapons(victim, attacker)
-		-- Sort out the attacker first
-		-- Strip all the attackers weapons
-		for i = 1, #attacker.weapons do
-			swapperRole.StripPlayerWeaponAndAmmo(attacker, attacker.weapons[i])
-		end
-
-		-- Give the attacker all their victims gear
-		for i = 1, #victim.weapons do
-			swapperRole.GivePlayerWeaponAndAmmo(attacker, victim.weapons[i])
-		end
-		attacker:SelectWeapon("weapon_zm_improvised")
-
-		-- Next is the victim
-		-- Strip all equipment from the victim
-		for i = 1, #victim.weapons do
-			local weapon = victim.weapons[i]
-			swapperRole.StripPlayerWeaponAndAmmo(victim, weapon)
-		end
-
-		-- Give the victim all their attackers gear
-		for i = 1, #attacker.weapons do
-			local weapon = attacker.weapons[i]
-			swapperRole.GivePlayerWeaponAndAmmo(victim, weapon)
-		end
-		victim:SelectWeapon("weapon_zm_improvised")
-
-		timer.Simple(0.1, function()
-			attacker.weapons = {}
-			victim.weapons = {}
-		end)
-	end
-
-	hook.Add("TTT2JesterModifyList", "AddSwapperToJesterList", function(jesterTable)
-		local players = player.GetAll()
-
-		for i = 1, #players do
-			local ply = players[i]
-
-			if ply:GetSubRole() ~= ROLE_SWAPPER then continue end
-
-			jesterTable[#jesterTable + 1] = ply
-		end
+	cvars.AddChangeCallback("ttt2_swapper_respawn_opposite_team", function(_, old, new)
+		roles.SWAPPER.HandleReviveConvars()
 	end)
 
-	-- Hide the swapper as a normal jester to the traitors
-	hook.Add("TTT2SpecialRoleSyncing", "TTT2RoleSwapper", function(ply, tbl)
-		if ply and not ply:HasTeam(TEAM_TRAITOR) or ply:GetSubRoleData().unknownTeam or GetRoundState() == ROUND_POST then return end
-
-		for swapper in pairs(tbl) do
-			if not swapper:IsTerror() or swapper == ply then continue end
-
-			if ply:GetSubRole() ~= ROLE_SWAPPER and swapper:GetSubRole() == ROLE_SWAPPER then
-				if not swapper:Alive() then continue end
-
-				if ply:GetTeam() ~= TEAM_JESTER then
-					tbl[swapper] = {ROLE_JESTER, TEAM_JESTER}
-				else
-					tbl[swapper] = {ROLE_SWAPPER, TEAM_JESTER}
-				end
-			end
-		end
+	cvars.AddChangeCallback("ttt2_swapper_respawn_delay_post_death", function(_, old, new)
+		roles.SWAPPER.HandleReviveConvars()
 	end)
 
-	hook.Add("TTT2ModifyRadarRole", "TTT2ModifyRadarRoleSwapper", function(ply, target)
-		if ply:HasTeam(TEAM_TRAITOR) and target:GetSubRole() == ROLE_SWAPPER then
-			return ROLE_JESTER, TEAM_JESTER
-		end
+	cvars.AddChangeCallback("ttt2_swapper_randomise_rounds", function(_, old, new)
+		roles.SWAPPER.HandleReviveConvars()
+	end)
+
+	hook.Add("TTTBeginRound", "SwapperRandomCvarCheck", function()
+		roles.SWAPPER.HandleReviveConvars()
 	end)
 
 	-- Swapper doesnt deal or take any damage in relation to players
 	hook.Add("PlayerTakeDamage", "SwapperNoDamage", function(ply, inflictor, killer, amount, dmginfo)
-		if swapperRole.ShouldTakeNoDamage(ply, killer, ROLE_SWAPPER) or swapperRole.ShouldDealNoDamage(ply, killer, ROLE_SWAPPER) then
+		if roles.SWAPPER.ShouldTakeNoDamage(ply, killer, ROLE_SWAPPER)
+			or roles.SWAPPER.ShouldDealNoDamage(ply, killer, ROLE_SWAPPER)
+		then
 			dmginfo:ScaleDamage(0)
 			dmginfo:SetDamage(0)
-
-			return
 		end
 	end)
 
 	-- Check if the swapper can damage entities or be damaged by environmental effects
 	hook.Add("EntityTakeDamage", "SwapperEntityNoDamage", function(ply, dmginfo)
-		if swapperRole.ShouldDealNoEntityDamage(ply, dmginfo, ROLE_SWAPPER) or swapperRole.ShouldTakeEnvironmentalDamage(ply, dmginfo, ROLE_SWAPPER) then
+		if roles.SWAPPER.ShouldDealNoEntityDamage(ply, dmginfo, ROLE_SWAPPER)
+			or roles.SWAPPER.ShouldTakeEnvironmentalDamage(ply, dmginfo, ROLE_SWAPPER)
+		then
 			dmginfo:ScaleDamage(0)
 			dmginfo:SetDamage(0)
-
-			return
 		end
 	end)
 
 	-- Grab the weapons tables before the player loses them
 	hook.Add("DoPlayerDeath", "SwapperItemGrab", function(victim, attacker, dmginfo)
 		if victim:GetSubRole() == ROLE_SWAPPER and IsValid(attacker) and attacker:IsPlayer() then
-			victim.weapons = swapperRole.GetPlayerWeapons(victim)
-			attacker.weapons = swapperRole.GetPlayerWeapons(attacker)
+			victim.weapons = roles.SWAPPER.GetPlayerWeapons(victim)
+			attacker.weapons = roles.SWAPPER.GetPlayerWeapons(attacker)
 		end
 	end)
 
 	hook.Add("PlayerDeath", "SwapperDeath", function(victim, infl, attacker)
-		if victim:GetSubRole() == ROLE_SWAPPER and IsValid(attacker) and attacker:IsPlayer() then
-			if victim == attacker then return end -- Suicide so do nothing
+		if victim:GetSubRole() ~= ROLE_SWAPPER or not IsValid(attacker)
+			or not attacker:IsPlayer() or victim == attacker
+		then return end
 
-			victim.newrole, victim.newteam = swapperRole.GetRespawnRole(attacker)
+		local role, team = roles.SWAPPER.GetRespawnRole(victim, attacker)
 
-			-- Handle the killers swap to his new life of swapper
-			attacker:SetRole(ROLE_SWAPPER)
+		-- Handle the killers swap to his new life of swapper
+		attacker:SetRole(ROLE_SWAPPER)
+		SendFullStateUpdate()
 
-			local health = GetConVar("ttt2_swapper_killer_health"):GetInt()
+		local health = cvKillerHealth:GetInt()
 
-			if health <= 0 then
-				attacker:Kill()
-			else
-				attacker:SetHealth(health)
-			end
-
-			attacker:PrintMessage(HUD_PRINTCENTER, "You killed the Swapper!")
-
-			-- Handle the swappers new life as a new role
-			if GetConVar("ttt2_swapper_respawn_delay_post_death"):GetBool() and health > 0 then
-				hook.Add("PostPlayerDeath", "SwapperWaitForKillerDeath_" .. victim:SteamID64(), function(deadply)
-					if not IsValid(attacker) or not IsValid(victim) then return end
-
-					if deadply ~= attacker then return end
-
-					SwapperRevive(victim)
-
-					hook.Remove("PostPlayerDeath", "SwapperWaitForKillerDeath_" .. victim:SteamID64())
-				end)
-			else
-				SwapperRevive(victim)
-			end
-
-			-- start the jester confetti
-			net.Start("NewConfetti")
-			net.WriteEntity(ply)
-			net.Broadcast()
-
-			timer.Simple(0, function()
-				SwapWeapons(victim, attacker)
-			end)
+		if health <= 0 then
+			attacker:Kill()
+		else
+			attacker:SetHealth(health)
 		end
+
+		attacker:PrintMessage(HUD_PRINTCENTER, "You killed the Swapper!")
+
+		-- Handle the swappers new life as a new role
+		if roles.SWAPPER.waitForDeath and health > 0 then
+			hook.Add("PostPlayerDeath", "SwapperWaitForKillerDeath_" .. victim:SteamID64(), function(deadply)
+				if not IsValid(attacker) or not IsValid(victim) then return end
+
+				if deadply ~= attacker then return end
+
+				roles.SWAPPER.Revive(victim, role, team)
+
+				hook.Remove("PostPlayerDeath", "SwapperWaitForKillerDeath_" .. victim:SteamID64())
+			end)
+		else
+			roles.SWAPPER.Revive(victim, role, team)
+		end
+
+		roles.JESTER.SpawnJesterConfetti(victim)
+
+		timer.Simple(0, function()
+			if not IsValid(victim) or not IsValid(attacker) then return end
+
+			roles.SWAPPER.SwapWeapons(victim, attacker)
+		end)
+	end)
+
+	-- hide the swapper as a normal jester
+	hook.Add("TTT2JesterModifySyncedRole", "SwapperHideAsJester", function(_, syncPly)
+		if syncPly:GetSubRole() ~= ROLE_SWAPPER then return end
+
+		return {ROLE_JESTER, TEAM_JESTER}
 	end)
 
 	-- reset hooks at round end
