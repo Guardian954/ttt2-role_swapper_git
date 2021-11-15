@@ -205,4 +205,10 @@ if SERVER then
 			hook.Remove("PostPlayerDeath", "SwapperWaitForKillerDeath_" .. plys[i]:SteamID64())
 		end
 	end)
+	
+	hook.Add("TTT2CanBeHitmanTarget", "TTT2SwapperNoHitmanTarget", function(hitman, ply)
+		if ply:GetSubRole() == ROLE_SWAPPER then
+			return false
+		end
+	end)
 end
